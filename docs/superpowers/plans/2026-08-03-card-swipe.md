@@ -4,7 +4,7 @@
 
 **Goal:** Add a horizontal drag gesture to the study card that flips an unrevealed card and throws a revealed one to the next card, with a matching slide transition shared by the Next button.
 
-**Architecture:** A new `SwipeableCard` view wraps the existing `FlipCard` and owns horizontal position plus the drag gesture; `FlipCard` is not modified. The card is identified by `store.index` inside a `ZStack`, so changing the index — from either the swipe or the Next button — drives one asymmetric move transition. The reveal gate stays in the reducer: a new `.cardSwiped` action funnels into the same private `advance` helper as `.nextButtonTapped`.
+**Architecture:** A new `SwipeableCard` view wraps the existing `FlipCard` and owns horizontal position plus the drag gesture; `FlipCard` is not modified. The card is identified by `store.index` inside a `ZStack`, so changing the index — from either the swipe or the Next button — drives one asymmetric move transition. Both rules stay in the reducer: a new `.cardSwiped` action funnels into the same private `advance` helper as `.nextButtonTapped`, inheriting the reveal gate and the last-card finish rather than copying either.
 
 **Tech Stack:** SwiftUI, iOS 17+, TCA (Point-Free Composable Architecture) 1.26.1, XCTest.
 
@@ -16,7 +16,8 @@
 - The project uses **Xcode 16 synchronized folder groups** (`PBXFileSystemSynchronizedRootGroup`). New `.swift` files under `CitizenCaferTest/` join the target automatically. **Do not edit `project.pbxproj`.**
 - The reveal gate is enforced **in the reducer**, not only in the view: `guard state.canAdvance, !state.cards.isEmpty`.
 - `Views/FlipCard.swift` must not be modified. It keeps its `isFlipped: Bool` interface.
-- Advancing wraps: `state.index = (state.index + 1) % state.cards.count`.
+- **The deck does not wrap.** The last card finishes it via `.send(.delegate(.deckFinished))` with no state mutation at all. Preserve `StudyFeature.Action.Delegate` and its explanatory comment exactly as they stand — this plan only adds a case alongside them.
+- The working tree carries an in-progress completion-screen feature (`CompletionFeature`, `CompletionView`, `ConfettiBurst`, `AppFeatureTests`). Do not revert, restructure, or commit those files; commit only the paths named in each task's `git add`.
 - Comments explain *why*, not *what* — match the density and voice of the surrounding files.
 - All commands run from the repo root, `/Users/shani/CitizenCaferTest`.
 
@@ -63,7 +64,9 @@ xcodebuild test -project CitizenCaferTest.xcodeproj -scheme CitizenCaferTest \
 Append this method to `StudyFeatureTests`, after `testNextIsBlockedUntilTheCardIsRevealed`:
 
 ```swift
-    func testSwipeObeysTheSameRevealGateAsNext() async {
+    /// The swipe inherits the whole rule set rather than a copy of it: the reveal gate, and the
+    /// last card finishing the deck instead of wrapping.
+    func testSwipeObeysTheSameRulesAsNext() async {
         let store = TestStore(initialState: StudyFeature.State(set: deck)) {
             StudyFeature()
         }
@@ -84,17 +87,19 @@ Append this method to `StudyFeatureTests`, after `testNextIsBlockedUntilTheCardI
         }
         XCTAssertFalse(store.state.canAdvance, "The new card has to be revealed on its own.")
         XCTAssertEqual(store.state.currentCard?.hebrew, "תּוֹדָה")
+        XCTAssertTrue(store.state.isOnLastCard)
 
-        // Swiping off the last card wraps, exactly as Next does.
         await store.send(.cardTapped) {
             $0.isShowingEnglish = true
             $0.hasRevealedCurrentCard = true
         }
-        await store.send(.cardSwiped) {
-            $0.index = 0
-            $0.hasRevealedCurrentCard = false
-            $0.isShowingEnglish = false
-        }
+
+        // Throwing the last card finishes rather than wraps — no mutation, just the delegate.
+        await store.send(.cardSwiped)
+        await store.receive(\.delegate.deckFinished)
+
+        XCTAssertEqual(store.state.index, 1)
+        XCTAssertTrue(store.state.hasRevealedCurrentCard)
     }
 ```
 
@@ -110,49 +115,37 @@ Expected: **compile failure** — `type 'StudyFeature.Action' has no member 'car
 
 - [ ] **Step 3: Add the action and extract the shared helper**
 
-In `CitizenCaferTest/Features/StudyFeature.swift`, replace the `Action` enum and the `body` property with:
+Three surgical edits to `CitizenCaferTest/Features/StudyFeature.swift`. **Do not** rewrite the `Action` enum wholesale — the `Delegate` case and its long explanatory comment must survive untouched, as must the `case .delegate: return .none` branch.
+
+**3a.** Add one case at the top of `enum Action`, keeping the existing alphabetical order:
 
 ```swift
     enum Action {
         case cardSwiped
         case cardTapped
-        case nextButtonTapped
-        case shuffleButtonTapped
-    }
+```
 
-    @Dependency(\.withRandomNumberGenerator) var withRandomNumberGenerator
+**3b.** Replace the whole `case .nextButtonTapped:` branch — its comments, both guards, `state.index += 1`, both resets, and its `return .none` — with this pair of lines:
 
-    var body: some Reducer<State, Action> {
-        Reduce { state, action in
-            switch action {
-            case .cardTapped:
-                state.isShowingEnglish.toggle()
-                if state.isShowingEnglish { state.hasRevealedCurrentCard = true }
-                return .none
-
+```swift
             case .cardSwiped, .nextButtonTapped:
                 return advance(&state)
+```
 
-            case .shuffleButtonTapped:
-                // Copied out first so the closure doesn't capture the `inout` state.
-                let cards = state.cards
-                state.cards = withRandomNumberGenerator { generator in
-                    cards.shuffled(using: &generator)
-                }
-                state.index = 0
-                state.hasRevealedCurrentCard = false
-                state.isShowingEnglish = false
-                return .none
-            }
-        }
-    }
+**3c.** Add the helper immediately after the closing brace of `var body`, before the struct's closing brace. Its body is exactly the code deleted in 3b, moved rather than rewritten:
 
-    /// Shared by the Next button and the leftward swipe. The gate lives here rather than in the
-    /// view, so the rule holds regardless of which gesture the intent arrived through.
+```swift
+    /// Shared by the Next button and the leftward swipe, so the gesture can't drift out of step
+    /// with the rules. Both gates live here rather than in the view, and the reveal rule outranks
+    /// the finish rule — hence the order.
+    ///
+    /// The deck doesn't wrap. On the last card nothing mutates: it's handed up exactly as the
+    /// reader left it, so popping back from the completion screen lands on the card they finished
+    /// on rather than somewhere they've never been.
     private func advance(_ state: inout State) -> Effect<Action> {
         guard state.canAdvance, !state.cards.isEmpty else { return .none }
-        // Wraps rather than ending the deck; a completion screen was an optional item.
-        state.index = (state.index + 1) % state.cards.count
+        guard !state.isOnLastCard else { return .send(.delegate(.deckFinished)) }
+        state.index += 1
         state.hasRevealedCurrentCard = false
         state.isShowingEnglish = false
         return .none
@@ -167,14 +160,16 @@ xcodebuild test -project CitizenCaferTest.xcodeproj -scheme CitizenCaferTest \
   -only-testing:CitizenCaferTestTests 2>&1 | tail -25
 ```
 
-Expected: **PASS**, including the pre-existing `testNextIsBlockedUntilTheCardIsRevealed` and `testShuffleResetsToAnUnrevealedFirstCard` — the extracted `advance` must not have changed their behaviour.
+Expected: **PASS**, and critically all four pre-existing `StudyFeatureTests` methods must still pass unchanged — `testNextIsBlockedUntilTheCardIsRevealed`, `testTheLastCardFinishesTheDeckInsteadOfWrapping`, `testAnUnrevealedLastCardStillGoesNowhere`, `testShuffleResetsToAnUnrevealedFirstCard`. Extracting `advance` is a pure refactor; if any of those four change behaviour, the extraction was not verbatim.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add CitizenCaferTest/Features/StudyFeature.swift CitizenCaferTestTests/StudyFeatureTests.swift
-git commit -m "Add cardSwiped action sharing the Next button's reveal gate"
+git commit -m "Add cardSwiped action sharing the Next button's rules"
 ```
+
+Only those two paths — the working tree's completion-screen files are not part of this commit.
 
 ---
 
@@ -185,7 +180,7 @@ git commit -m "Add cardSwiped action sharing the Next button's reveal gate"
 
 **Interfaces:**
 - Consumes: nothing at compile time — the view is generic over its content and takes plain closures.
-- Produces: `SwipeableCard(canAdvance:onAdvance:onFlip:content:)`, where `canAdvance: Bool`, `onAdvance: () -> Void`, `onFlip: () -> Void`, and `content` is a `@ViewBuilder`. Task 3 consumes exactly this signature.
+- Produces: `SwipeableCard(canAdvance:advanceRemovesCard:onAdvance:onFlip:content:)`, where `canAdvance: Bool`, `advanceRemovesCard: Bool`, `onAdvance: () -> Void`, `onFlip: () -> Void`, and `content` is a `@ViewBuilder`. Task 3 consumes exactly this signature and passes `advanceRemovesCard: !store.isOnLastCard`.
 
 There is no unit test for this task: SwiftUI gesture state is not reachable from XCTest. It is verified by the build plus the interactive `#Preview` harness here, and end-to-end by the UI test in Task 4.
 
@@ -208,6 +203,10 @@ import SwiftUI
 /// so the throw continues from where the finger let go instead of snapping back to centre first.
 struct SwipeableCard<Content: View>: View {
     let canAdvance: Bool
+    /// False on the last card, where advancing finishes the deck instead of replacing the card —
+    /// so there is no removal transition coming to carry the offset away, and the throw has to
+    /// tidy up after itself.
+    let advanceRemovesCard: Bool
     let onAdvance: () -> Void
     let onFlip: () -> Void
     @ViewBuilder var content: Content
@@ -255,12 +254,16 @@ struct SwipeableCard<Content: View>: View {
 
                 switch mode {
                 case .advance:
-                    if value.translation.width < -throwDistance
-                        || value.predictedEndTranslation.width < -flickDistance {
-                        // Left where it is on purpose: the parent's removal transition carries the
-                        // card the rest of the way, and animating home would fight it.
-                        onAdvance()
-                    } else {
+                    let thrown = value.translation.width < -throwDistance
+                        || value.predictedEndTranslation.width < -flickDistance
+
+                    if thrown { onAdvance() }
+
+                    // A thrown card that's about to be removed keeps its offset on purpose: the
+                    // parent's removal transition carries it the rest of the way, and animating
+                    // home would fight that. On the last card nothing is removed, so the same
+                    // throw has to put the card back itself or it would sit stranded off-centre.
+                    if !thrown || !advanceRemovesCard {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = 0 }
                     }
                 case .flip:
@@ -279,11 +282,12 @@ struct SwipeableCard<Content: View>: View {
 #Preview {
     struct Harness: View {
         @State private var canAdvance = false
+        @State private var isLastCard = false
         @State private var advances = 0
 
         var body: some View {
             VStack(spacing: 24) {
-                SwipeableCard(canAdvance: canAdvance) {
+                SwipeableCard(canAdvance: canAdvance, advanceRemovesCard: !isLastCard) {
                     advances += 1
                     canAdvance = false
                 } onFlip: {
@@ -294,6 +298,10 @@ struct SwipeableCard<Content: View>: View {
                         .frame(height: 280)
                         .overlay(Text(canAdvance ? "Throw me left" : "Drag to flip"))
                 }
+
+                // There is no parent here to remove the card on a throw, so with this off a
+                // successful throw correctly leaves it lying where it landed.
+                Toggle("Last card (throw springs home)", isOn: $isLastCard)
 
                 Text("Advanced \(advances) times")
             }
@@ -319,8 +327,9 @@ Expected: `** BUILD SUCCEEDED **`. Do **not** add the file to `project.pbxproj` 
 Open `CitizenCaferTest/Views/SwipeableCard.swift` in Xcode and resume the canvas. Confirm by hand:
 
 1. Grey card, drag either way — it moves a little (max 40pt), springs back, and the label flips to "Throw me left" once you release past ~60pt.
-2. Green card, drag left — it tracks the finger exactly, and releasing past ~88pt increments the counter.
-3. Green card, drag right — it moves at most 40pt and springs back without incrementing.
+2. Green card, drag right — it moves at most 40pt and springs back without incrementing.
+3. Green card, **"Last card" on**, drag left past ~88pt — the counter increments *and* the card springs back to centre. This is the branch the real last card depends on.
+4. Green card, **"Last card" off**, drag left past ~88pt — the counter increments and the card stays where it landed. Correct here: in the real app the parent removes it at this moment, and the removal transition takes over.
 
 - [ ] **Step 4: Commit**
 
@@ -337,7 +346,7 @@ git commit -m "Add SwipeableCard: resisted drag flips, leftward throw advances"
 - Modify: `CitizenCaferTest/Views/StudyView.swift:7-11` (environment), `:17-40` (card), and add two computed properties.
 
 **Interfaces:**
-- Consumes: `SwipeableCard(canAdvance:onAdvance:onFlip:content:)` from Task 2; `StudyFeature.Action.cardSwiped` from Task 1.
+- Consumes: `SwipeableCard(canAdvance:advanceRemovesCard:onAdvance:onFlip:content:)` from Task 2; `StudyFeature.Action.cardSwiped` from Task 1; the pre-existing `StudyFeature.State.isOnLastCard`.
 - Produces: nothing consumed by later tasks — Task 4 drives this through the UI only.
 
 - [ ] **Step 1: Add the Reduce Motion environment property**
@@ -377,6 +386,9 @@ Replace the whole `if let card = store.currentCard { … }` block — currently 
                 ZStack {
                     SwipeableCard(
                         canAdvance: store.canAdvance,
+                        // The last card finishes the deck rather than being replaced, so there's no
+                        // removal transition coming and the throw has to put the card back itself.
+                        advanceRemovesCard: !store.isOnLastCard,
                         onAdvance: { store.send(.cardSwiped) },
                         onFlip: { store.send(.cardTapped) }
                     ) {
@@ -437,6 +449,7 @@ Navigate Level → Red → Start studying, then confirm by hand:
 2. Drag the revealed card left — it follows the finger and throws off to the left while the next card slides in from the right.
 3. Tap **Next** — the same slide plays.
 4. Drag the revealed card right — resisted, springs back, index unchanged.
+5. Reach card 10 of 10 (the button reads **Finish**), reveal it, and throw it left — the completion screen appears **and** the card springs back to centre. Pop back from the completion screen and confirm the card is centred, not stranded off to the left.
 
 - [ ] **Step 6: Commit**
 

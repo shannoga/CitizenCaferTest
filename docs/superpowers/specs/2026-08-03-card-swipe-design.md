@@ -19,8 +19,9 @@ before moving on. The swipe is a second way to obey that rule, never a way aroun
 
 ## Non-goals
 
-Backward navigation (the deck is one-way and wraps), scrubbable/interactive flip rotation,
-drag-linked card tilt, haptics, a completion screen.
+Backward navigation (the deck is one-way), scrubbable/interactive flip rotation, drag-linked
+card tilt, haptics. The completion screen already exists and is not this feature's concern
+beyond routing a last-card throw into it.
 
 ---
 
@@ -37,6 +38,8 @@ interface and its existing midpoint-opacity trick — nothing in that file is to
 ```swift
 struct SwipeableCard<Content: View>: View {
     let canAdvance: Bool
+    /// False on the last card, where advancing finishes the deck instead of replacing the card.
+    let advanceRemovesCard: Bool
     let onAdvance: () -> Void
     let onFlip: () -> Void
     @ViewBuilder var content: Content
@@ -82,9 +85,15 @@ at the moment of removal and produce a visible snap-back-then-fly.
 This is also what makes the Next button and the swipe share one transition for free: both paths
 do nothing but change `store.index`.
 
-**Commit does not animate the offset home.** On a successful throw, `SwipeableCard` calls
-`onAdvance()` and leaves `offset` where it is. Animating it back to zero would fight the removal
-transition.
+**Commit does not animate the offset home — except on the last card.** On a successful throw
+`SwipeableCard` calls `onAdvance()` and leaves `offset` where it is, because the removal
+transition carries the card the rest of the way and animating home would fight it.
+
+The last card is the exception, and it is why `advanceRemovesCard` exists. There, advancing
+finishes the deck rather than changing the index, so nothing is removed and no transition plays.
+Left alone, the card would sit stranded off-centre — and still be stranded when the reader pops
+back from the completion screen. So when `advanceRemovesCard` is false, the throw calls
+`onAdvance()` *and* springs the offset home.
 
 ---
 
@@ -105,6 +114,8 @@ private enum DragMode { case advance, flip }
 - Rightward translation is resisted — right does not advance.
 - On release, commit if `translation.width < -88` **or** `predictedEndTranslation.width < -200`
   (a flick). Otherwise spring home with `.spring(response: 0.3, dampingFraction: 0.8)`.
+- A commit springs home too when `advanceRemovesCard` is false — see §2. Otherwise the offset is
+  left alone for the removal transition.
 
 **`.flip` mode** (entered when `canAdvance` is false):
 
@@ -135,16 +146,30 @@ case cardSwiped
 ```
 
 It does not reuse `.nextButtonTapped`. Action names in this reducer describe what the user did,
-so both cases funnel into a shared private helper holding the existing guard, wrap, and reset
-logic:
+so both cases funnel into a shared private helper holding the existing logic verbatim:
 
 ```swift
 case .cardSwiped, .nextButtonTapped:
     return advance(&state)
 ```
 
-The `guard state.canAdvance, !state.cards.isEmpty` stays inside that helper, so the swipe path is
-gated in the reducer exactly as the button path already is — not only by the view.
+Both guards move into that helper unchanged, so the swipe inherits the whole rule set rather
+than a copy of it — the reveal gate, and the last-card rule that finishes the deck instead of
+wrapping:
+
+```swift
+private func advance(_ state: inout State) -> Effect<Action> {
+    guard state.canAdvance, !state.cards.isEmpty else { return .none }
+    guard !state.isOnLastCard else { return .send(.delegate(.deckFinished)) }
+    state.index += 1
+    state.hasRevealedCurrentCard = false
+    state.isShowingEnglish = false
+    return .none
+}
+```
+
+A leftward throw on the last card therefore finishes the deck exactly as the Finish button does,
+including the `.delegate(.deckFinished)` the parent needs to push the completion screen.
 
 Flip-by-drag needs no new action; it sends the existing `.cardTapped`.
 
@@ -175,8 +200,9 @@ a second path to something they can already reach, at the cost of another announ
 **`StudyFeatureTests`** — two additions, matching the existing `TestStore` style:
 
 - `.cardSwiped` before revealing is a no-op: index unchanged, no state mutation.
-- `.cardSwiped` after revealing advances, wraps, and resets `hasRevealedCurrentCard` and
-  `isShowingEnglish` — same expectations as the `.nextButtonTapped` case.
+- `.cardSwiped` after revealing advances and resets `hasRevealedCurrentCard` and
+  `isShowingEnglish`, and on the last card emits `.delegate(.deckFinished)` with no mutation —
+  the same expectations the `.nextButtonTapped` tests already assert.
 
 **`FlipWalkthroughUITests`** — one addition, kept as a walkthrough with screenshot attachments
 rather than a strict assertion suite, consistent with the existing file:
@@ -188,8 +214,8 @@ rather than a strict assertion suite, consistent with the existing file:
 
 ## 8. Known edge
 
-Shuffle sets `index = 0`. If you were already on card 0, the `.id` does not change, so the deck
-swaps content with no slide — a pop rather than a transition. This is accepted rather than fixed:
+Shuffle calls `State.restart()`, which sets `index = 0`. If you were already on card 0, the `.id`
+does not change, so the deck swaps content with no slide — a pop rather than a transition. This is accepted rather than fixed:
 the slide means "next card," and a shuffle is a different event. Keying the id on a deck
 generation counter as well would animate it, at the cost of implying the two actions are the
 same motion.
