@@ -30,9 +30,11 @@ xcodebuild test -project CitizenCaferTest.xcodeproj -scheme CitizenCaferTest \
   -only-testing:CitizenCaferTestTests
 ```
 
-The only third-party dependency is
+Two third-party packages, both via SPM:
 [swift-composable-architecture](https://github.com/pointfreeco/swift-composable-architecture)
-(1.26.1), resolved via SPM. Networking is plain `URLSession` + `async/await`, as required.
+(1.26.1) for the architecture, and [Swiftetti](https://github.com/fredbenenson/Swiftetti) (MIT) for
+the completion screen's confetti — see The confetti burst. Neither touches the network: **networking
+is plain `URLSession` + `async/await`**, with no third-party layer over it, as required.
 
 ---
 
@@ -48,8 +50,8 @@ testing that plain MVVM doesn't give you for free.
 ```
 Models/          VocabSet, WordPair, VocabularySource, VocabularyLoad, VocabularyError
 Dependencies/    VocabularyClient (the repository) + its three collaborators
-Features/        AppFeature → BrowseFeature, StudyFeature
-Views/           AppView, BrowseView, StudyView, FlipCard
+Features/        AppFeature → BrowseFeature, StudyFeature, CompletionFeature
+Views/           AppView, BrowseView, StudyView, CompletionView, FlipCard, SwipeableCard, ConfettiBurst
 DesignSystem/    Brand colour/space tokens, BrandTypography roles
 Resources/Fonts/ The two brand families and their licences
 vocab.json       Bundled fallback copy of the API response
@@ -62,6 +64,14 @@ persistence, no formatting decisions that depend on where the data came from.
 **Navigation is state.** `startStudyingButtonTapped` does nothing in `BrowseFeature`; `AppFeature`
 observes it and appends to a `StackState`. The study screen has no idea it's being pushed, and the
 whole navigation stack is inspectable and testable as a value.
+
+**Two ways a child talks to its parent, and the line between them.** Unconditional intents stay
+plain — `startStudyingButtonTapped` and the completion screen's three buttons are no-ops in the
+child, and `AppFeature` acts on them. A fact only the child can derive travels as an explicit
+`Delegate` action: `StudyFeature` sends `.delegate(.deckFinished)` on the last card. The difference
+matters because on the last card the correct child behaviour is *no mutation at all*, which from
+the outside is indistinguishable from Next tapped on an unrevealed card. Telling those apart in the
+parent would mean a second copy of `canAdvance` — and the reveal rule would then have two homes.
 
 ### A deliberate deviation: dependency client instead of a protocol
 
@@ -159,7 +169,7 @@ There are no force unwraps and no `fatalError` in the app target.
 
 ## Tests
 
-Twenty unit tests (XCTest) plus UI walkthroughs. None of the unit tests touch the network or the
+Twenty-nine unit tests (XCTest) plus UI walkthroughs. None of the unit tests touch the network or the
 disk.
 
 **Repository — `VocabularyClientTests`**
@@ -183,6 +193,7 @@ back, but proves nothing about whether status-code validation is implemented. Th
 | --- | --- |
 | `testChangingTierResetsInvalidLevelAndTypeSelection` | switching tier clears a now-invalid level and pack; single-pack levels need no pack and become studyable immediately |
 | `testLoadFailureSurfacesErrorAndRetrySucceeds` | failure renders an error state, retry returns to loading and then succeeds |
+| `testSetAfterAdvancesWithinALevelAndStopsAtTheLastPack` | `set(after:)` walks packs in order and returns `nil` at the end of a level rather than crossing into the next one |
 
 **Study rules — `StudyFeatureTests`**
 
@@ -190,6 +201,23 @@ back, but proves nothing about whether status-code validation is implemented. Th
 | --- | --- |
 | `testNextIsBlockedUntilTheCardIsRevealed` | Next is inert before reveal, survives a flip back to Hebrew, then advances and re-locks on the new card |
 | `testShuffleResetsToAnUnrevealedFirstCard` | shuffling returns to an unrevealed card at index 0, with a seeded generator so the order is deterministic |
+| `testTheLastCardFinishesTheDeckInsteadOfWrapping` | the last card mutates nothing and sends `.delegate(.deckFinished)` |
+| `testAnUnrevealedLastCardStillGoesNowhere` | the reveal rule outranks the finish rule — no state change and, because `TestStore` is exhaustive about effects, no delegate either |
+| `testSwipeObeysTheSameRulesAsNext` | the swipe routes through the same `advance`, so it is inert before reveal and finishes rather than wraps on the last card |
+
+**The completion flow — `AppFeatureTests`**
+
+The flow only exists as a conversation between three reducers: the study screen reports a deck is
+done, `AppFeature` decides what that leads to, and `BrowseFeature` holds the only catalogue that can
+answer "what's the next pack?". None of it is visible from a single feature's tests.
+
+| Test | Asserts |
+| --- | --- |
+| `testFinishingADeckPushesCompletionCarryingTheFollowingPack` | completion is pushed with the next pack already resolved |
+| `testFinishingTheLastPackInALevelOffersNoNextPack` | a single-pack level yields `nextSet == nil`, which is what hides the button |
+| `testStudyAgainDropsCompletionAndRewindsTheDeckUnderneath` | replaying leaves the stack **one** deep, not two |
+| `testNextPackReplacesTheDeckInPlaceAndMovesTheBrowseSelectionWithIt` | the deck is swapped in place and `browse` stays in step, so Back isn't stale |
+| `testBackToBrowseClearsTheWholeStack` | the stack empties |
 
 TCA's `TestStore` is exhaustive: every state mutation must be declared or the test fails. These
 aren't assertions on a couple of fields — they pin the entire state after each action.
@@ -202,6 +230,10 @@ line-height floor at every Dynamic Type size, and that roles scale with the user
 **`FlipWalkthroughUITests`** drives the real app through load → pick level → study → flip, capturing
 screenshots. It's a smoke check that the screens compose, not a logic test.
 
+**`CompletionWalkthroughUITests`** plays a whole ten-card pack to its end, checks the last card's
+button reads Finish rather than Next, and proves the completion screen arrives with the right ways
+onward. It also captures the confetti, which nothing else can assert on.
+
 ---
 
 ## Design
@@ -212,10 +244,51 @@ charcoal `#373230`, yellow `#F9E24C`, warm off-white surface `#F2F1EC`, muted `#
 
 The rules I took as binding: charcoal text on yellow (never white), never a pure-white page field,
 yellow as emphasis rather than wallpaper, thin borders, generous whitespace, restrained motion.
-Yellow appears in exactly three places — the primary CTA, the Next button, and the retry button.
+Yellow appears in exactly four places — the primary CTA, the Next button, the retry button, and one
+button on the completion screen. That last one is a rule rather than a count: **the completion
+screen gets exactly one yellow element, and it is whichever button means "keep going"** — Next pack
+when there is one, otherwise Study this pack again. Three filled CTAs on a celebration screen would
+make it the exception that proves "emphasis, not wallpaper".
+
+### The confetti burst
+
+Finishing a pack throws one burst of brand-yellow shards from the top edge, which falls and settles.
+A burst, not a loop: confetti still falling behind text you're trying to read stops being
+celebration and becomes wallpaper. It sits *behind* the content, because the charcoal-on-yellow
+contrast rule objects to yellow shards crossing 13pt charcoal metadata.
+
+The three yellows are derived in HSB from the single `BrandYellow` swatch rather than declared as
+new hex literals — there is no second and third value to keep in step, and no `Color(hex:)`
+extension coming back in through the side door after it was deliberately removed.
+
+Under Reduce Motion the whole thing degrades to a static scatter that fades in over a third of a
+second, at fixed positions rather than random ones: Reduce Motion is a request for predictability.
+The burst is decorative by contract — `accessibilityHidden(true)` and `allowsHitTesting(false)`
+wrap both branches, so it can never be announced or swallow a tap.
+
+The falling branch is [Swiftetti](https://github.com/fredbenenson/Swiftetti) (MIT), which renders
+particles through a SwiftUI `Canvas` and emits one burst per rising edge of its trigger. It is
+pinned by **revision**, not version: the repository publishes no tags, so a branch pin would be a
+moving target.
 
 Native affordances were preferred over visual fidelity, per the brief: `Menu` pickers,
 `NavigationStack`, SF Symbols, standard nav bar.
+
+### The launch screen
+
+The brief rules out Storyboards, so there is no `LaunchScreen.storyboard`. The launch screen is
+declared instead: `INFOPLIST_KEY_UILaunchScreen_Generation = YES`, which is the Xcode-native way to
+say "SwiftUI app, no launch storyboard" and synthesises an empty `UILaunchScreen` dictionary into the
+generated Info.plist.
+
+That means a plain system-background field rather than a branded one, and it's worth being straight
+about why. I tried carrying the brand surface across by pointing `UILaunchScreen`'s `UIColorName` at
+the `SurfaceBase` asset through a base Info.plist; Xcode's Info.plist generator overwrites the key
+with its own empty dictionary whichever way `_Generation` is set, so the colour never reached the
+built bundle. Rather than ship a README claim the binary doesn't honour, the launch screen stays the
+stock one. It's also close to what the HIG asks for — a launch screen should disappear, not
+announce itself. The logo arrives a moment later in `BrowseView`'s header, where it's content rather
+than a curtain.
 
 ### Typography
 
@@ -269,17 +342,32 @@ moment, and the transition reads as rotation rather than a cross-fade. Under
 
 Optional items I chose not to build, and why:
 
-- **Completion screen** — Next wraps to the start of the deck instead. A completion state is a
-  product decision (retry wrong cards? shuffle? exit?) that deserves more thought than the time left.
-- **Haptics on flip** — one line, but untestable in the simulator, so I'd be shipping it unverified.
-- **Swipe gesture for Next** — competes with the interactive back-swipe on a pushed screen; doing it
-  properly means tuning gesture priority, which isn't worth the remaining budget.
 - **iPad-specific layout** — the app runs on iPad but the layout is phone-first.
 - **Progress persistence** — not asked for, and it implies a data model for "known" cards.
 
-Included despite being optional, because they're cheap and the card is otherwise opaque to
-assistive technology: **VoiceOver labels** on the card, controls and pickers, and **Reduce Motion**
-handling on the flip.
+Everything else on the optional list is here: **dark mode** (every token carries a dark value),
+**VoiceOver labels** on the card, controls and pickers, **Reduce Motion** handling on the flip, the
+swipe transition and the confetti, a **completion screen**, **custom fonts**, a **swipe gesture
+for Next**, and a **haptic on flip**.
+
+The swipe needed a decision rather than just time, so it's worth spelling out. It does one thing —
+a revealed card thrown to the left advances — and the reveal state decides only whether it is
+available. An unrevealed card still follows the finger at a quarter speed up to 40pt and springs
+back, which is the tactile counterpart to the greyed-out Next button: the control reads as "not
+yet" rather than as dead. An earlier revision also let that drag flip the card, which meant one
+gesture had two meanings and needed a mode locked on first movement so a mid-drag flip couldn't
+silently turn into a throw; dropping flip-by-drag removed the ambiguity and the machinery with it.
+It attaches with `.gesture`, not `.highPriorityGesture`, so the system's interactive back-swipe
+still wins from the screen edge.
+
+The flip haptic is a soft impact driven by a view-local counter the tap increments, rather than by
+`isShowingEnglish` — advancing and shuffling both clear that flag, so triggering on it would buzz
+on Next and on Shuffle. It is the one thing here the test suite cannot cover: haptics can't be felt
+in the simulator, so it needs checking by hand on a device.
+
+Both endings route through the reducer's `advance` rather than moving the index directly, so the
+gesture and the Next button cannot drift out of step — which is what `testSwipeObeysTheSameRulesAsNext`
+pins.
 
 ---
 

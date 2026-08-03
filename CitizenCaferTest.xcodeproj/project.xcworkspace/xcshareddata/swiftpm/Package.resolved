@@ -1,5 +1,5 @@
 {
-  "originHash" : "e7024a9cd3fa1c40fa4003b3b2b186c00ba720c787de8ba274caf8fc530677e8",
+  "originHash" : "b50c6845665abaa4cf6d9e73fe8fe83e8cc325caf5b9b06314aec058931745ee",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -116,6 +116,14 @@
       "state" : {
         "revision" : "79e4b74a295b6eb74a8b585e3a39d29e70c1dbd1",
         "version" : "603.0.2"
+      }
+    },
+    {
+      "identity" : "swiftetti",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/fredbenenson/Swiftetti",
+      "state" : {
+        "revision" : "57ee22d7faceb9d475414939d2f9ddf29b1741f4"
       }
     },
     {

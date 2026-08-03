@@ -9,6 +9,8 @@ struct AppView: View {
             BrowseView(store: store.scope(state: \.browse, action: \.browse))
         } destination: { pathStore in
             switch pathStore.case {
+            case .completion(let completionStore):
+                CompletionView(store: completionStore)
             case .study(let studyStore):
                 StudyView(store: studyStore)
             }

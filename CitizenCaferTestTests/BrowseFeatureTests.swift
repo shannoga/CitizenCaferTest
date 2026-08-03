@@ -77,4 +77,22 @@ final class BrowseFeatureTests: XCTestCase {
             $0.selectedTier = "Freedom"
         }
     }
+
+    func testSetAfterAdvancesWithinALevelAndStopsAtTheLastPack() {
+        var state = BrowseFeature.State()
+        state.loadState = .loaded(Fixtures.sets, .remote)
+
+        let packOne = Fixtures.sets[0]     // Freedom · Dark Green · Pack 1
+        let packTwo = Fixtures.sets[1]     // Freedom · Dark Green · Pack 2
+        let singlePack = Fixtures.sets[2]  // Foundation · Red, no packs
+
+        XCTAssertEqual(state.set(after: packOne), packTwo)
+        // Also proves it never crosses into another tier: Foundation · Red is the very next
+        // element of the array, and it is not the answer.
+        XCTAssertNil(state.set(after: packTwo), "The last pack in a level has no successor.")
+        XCTAssertNil(
+            state.set(after: singlePack),
+            "A single-pack level is finished when it's finished."
+        )
+    }
 }

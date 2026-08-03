@@ -46,7 +46,12 @@ struct BrowseFeature {
                 .sorted()
         }
 
-        var requiresTypeSelection: Bool { types.count > 1 }
+        /// Gated on the level *having* packs at all, not on having more than one. A level that
+        /// shipped a single numbered pack would otherwise hide the picker, leave `selectedType`
+        /// at `nil`, and never match a set whose `type` is `1` — an unstudyable level with nothing
+        /// on screen to explain why. The current data never produces that shape; the rule costs
+        /// nothing and stops it mattering if it ever does.
+        var requiresTypeSelection: Bool { !types.isEmpty }
 
         /// Resolves to a pack for both shapes: multi-pack levels match on `type`, single-pack levels
         /// match `nil` against `nil`.
@@ -57,6 +62,23 @@ struct BrowseFeature {
         }
 
         var canStartStudying: Bool { selectedSet != nil }
+
+        /// The pack that follows `set` inside the same tier and level.
+        ///
+        /// `nil` at the end of a level, and `nil` for a single-pack level: carrying on into the
+        /// *next level* is a progression decision, not a "next pack" one.
+        ///
+        /// Sorted rather than left in first-appearance order so it agrees with the order the Pack
+        /// menu showed the reader — see `types` above.
+        func set(after set: VocabSet) -> VocabSet? {
+            let packs = sets
+                .filter { $0.tier == set.tier && $0.level == set.level }
+                .sorted { ($0.type ?? .min) < ($1.type ?? .min) }
+            guard let index = packs.firstIndex(where: { $0.id == set.id }),
+                  packs.indices.contains(index + 1)
+            else { return nil }
+            return packs[index + 1]
+        }
     }
 
     enum Action {
