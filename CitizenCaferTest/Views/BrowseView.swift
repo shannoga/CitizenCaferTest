@@ -4,6 +4,11 @@ import SwiftUI
 struct BrowseView: View {
     let store: StoreOf<BrowseFeature>
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The lockup grows with the type scale so it stays proportionate to the title beneath it.
+    @ScaledMetric(relativeTo: .largeTitle) private var logoSize: CGFloat = 72
+
     var body: some View {
         ZStack {
             Brand.surface.ignoresSafeArea()
@@ -15,6 +20,7 @@ struct BrowseView: View {
                 picker
             case .loading:
                 ProgressView("Loading vocabulary…")
+                    .brandType(.bodySmall)
                     .tint(Brand.textMuted)
                     .foregroundStyle(Brand.textMuted)
             }
@@ -28,9 +34,7 @@ struct BrowseView: View {
     private var picker: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Brand.Space.lg) {
-                Text("Choose what to study")
-                    .font(.brandDisplay(30))
-                    .foregroundStyle(Brand.textPrimary)
+                header
 
                 VStack(spacing: 0) {
                     menuRow(
@@ -48,6 +52,7 @@ struct BrowseView: View {
                         value: store.selectedLevel,
                         options: store.levels,
                         label: { $0 },
+                        dotColor: Self.levelColor(for:),
                         select: { store.send(.levelSelected($0)) }
                     )
 
@@ -71,7 +76,7 @@ struct BrowseView: View {
                     store.send(.startStudyingButtonTapped)
                 } label: {
                     Text("Start studying")
-                        .font(.headline)
+                        .brandType(.buttonLabel)
                         .foregroundStyle(Brand.charcoal)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(
@@ -83,11 +88,29 @@ struct BrowseView: View {
 
                 if let note = offlineNote {
                     Label(note, systemImage: "arrow.down.circle")
-                        .font(.footnote)
+                        .brandType(.metaSmall)
                         .foregroundStyle(Brand.textMuted)
                 }
             }
             .padding(Brand.Space.lg)
+        }
+    }
+
+    /// The logo is decorative here: the navigation bar already announces "Citizen Café", so
+    /// exposing the mark again would just make VoiceOver repeat the brand name.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Brand.Space.md) {
+            Image("Logo")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: logoSize, height: logoSize)
+                .clipShape(RoundedRectangle(cornerRadius: Brand.Radius.control, style: .continuous))
+                .accessibilityHidden(true)
+
+            Text("Choose what to study")
+                .brandType(.h1)
+                .foregroundStyle(Brand.textPrimary)
         }
     }
 
@@ -104,28 +127,108 @@ struct BrowseView: View {
         value: String?,
         options: [Option],
         label: @escaping (Option) -> String,
+        dotColor: ((String) -> Color?)? = nil,
         select: @escaping (Option) -> Void
     ) -> some View {
         Menu {
             ForEach(options, id: \.self) { option in
-                Button(label(option)) { select(option) }
+                Button {
+                    select(option)
+                } label: {
+                    menuItemLabel(label(option), dotColor: dotColor)
+                }
             }
         } label: {
-            HStack {
-                Text(title)
-                    .foregroundStyle(Brand.textPrimary)
-                Spacer()
-                Text(value ?? "Choose")
-                    .foregroundStyle(value == nil ? Brand.textMuted : Brand.textPrimary)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(Brand.textMuted)
+            // Side by side until the text outgrows the row: at accessibility sizes a long value
+            // like "Foundation" would otherwise wrap mid-word against the title.
+            let label = Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: Brand.Space.sm) {
+                        rowTitle(title)
+                        HStack { rowValue(value, dotColor: dotColor); Spacer(); chevron }
+                    }
+                } else {
+                    HStack {
+                        rowTitle(title)
+                        Spacer()
+                        rowValue(value, dotColor: dotColor)
+                        chevron
+                    }
+                }
             }
-            .padding(Brand.Space.md)
+
+            label
+                .brandType(.uiLabel)
+                .padding(Brand.Space.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(options.isEmpty)
         .accessibilityLabel("\(title): \(value ?? "not chosen")")
+        .accessibilityIdentifier("picker.\(title)")
     }
+
+    private func rowTitle(_ title: String) -> some View {
+        Text(title).foregroundStyle(Brand.textPrimary)
+    }
+
+    private func rowValue(_ value: String?, dotColor: ((String) -> Color?)? = nil) -> some View {
+        HStack(spacing: Brand.Space.sm) {
+            if let value, let color = dotColor?(value) {
+                levelDot(color)
+            }
+            Text(value ?? "Choose")
+                .foregroundStyle(value == nil ? Brand.textMuted : Brand.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    /// A menu item's label is bridged to a native `UIMenu` entry, which only carries a title and
+    /// an `Image` — arbitrary shapes like `Circle` are dropped, so the dot has to be an image.
+    @ViewBuilder
+    private func menuItemLabel(_ text: String, dotColor: ((String) -> Color?)?) -> some View {
+        if let color = dotColor?(text) {
+            Label {
+                Text(text)
+            } icon: {
+                levelDot(color)
+            }
+        } else {
+            Text(text)
+        }
+    }
+
+    private func levelDot(_ color: Color) -> some View {
+        Image(systemName: "circle.fill")
+            .foregroundStyle(color)
+            .accessibilityHidden(true)
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.up.chevron.down")
+            .brandType(.metaSmall)
+            .foregroundStyle(Brand.textMuted)
+    }
+
+    /// Levels are literally named after colors, so the dot just resolves the name to its asset
+    /// catalog swatch — same convention as every other `Brand` color.
+    private static func levelColor(for level: String) -> Color? {
+        levelAssetNameByLevel[level].map(Color.init(_:))
+    }
+
+    private static let levelAssetNameByLevel: [String: String] = [
+        "Red": "LevelRed",
+        "Orange": "LevelOrange",
+        "Pink": "LevelPink",
+        "Yellow": "LevelYellow",
+        "Light Blue": "LevelLightBlue",
+        "Blue": "LevelBlue",
+        "Lime": "LevelLime",
+        "Green": "LevelGreen",
+        "Dark Green": "LevelDarkGreen",
+        "Turquoise": "LevelTurquoise",
+        "Indigo": "LevelIndigo",
+        "Purple": "LevelPurple",
+    ]
 
     // MARK: - Error
 
@@ -136,16 +239,16 @@ struct BrowseView: View {
                 .foregroundStyle(Brand.textMuted)
 
             Text("Couldn't load the vocabulary")
-                .font(.brandDisplay(22))
+                .brandType(.h2)
                 .foregroundStyle(Brand.textPrimary)
 
             Text(message)
-                .font(.subheadline)
+                .brandType(.bodySmall)
                 .foregroundStyle(Brand.textMuted)
                 .multilineTextAlignment(.center)
 
             Button("Try again") { store.send(.retryButtonTapped) }
-                .font(.headline)
+                .brandType(.buttonLabel)
                 .foregroundStyle(Brand.charcoal)
                 .padding(.horizontal, Brand.Space.lg)
                 .frame(height: 48)
@@ -153,5 +256,17 @@ struct BrowseView: View {
                 .padding(.top, Brand.Space.sm)
         }
         .padding(Brand.Space.xl)
+    }
+}
+
+private extension Color {
+    /// Level swatches only, e.g. `0xE5484D` — not a general-purpose initializer for brand colors,
+    /// which stay resolved through the asset catalog.
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
     }
 }

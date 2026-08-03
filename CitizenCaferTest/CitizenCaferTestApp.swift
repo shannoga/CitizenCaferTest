@@ -15,6 +15,10 @@ struct CitizenCaferTestApp: App {
         AppFeature()
     }
 
+    init() {
+        BrandTypography.applyNavigationBarAppearance()
+    }
+
     var body: some Scene {
         WindowGroup {
             AppView(store: Self.store)

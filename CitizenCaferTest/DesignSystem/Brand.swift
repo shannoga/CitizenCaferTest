@@ -3,9 +3,7 @@ import SwiftUI
 /// Brand tokens from the Citizen Café design bible, resolved through the asset catalog so light
 /// and dark appearances come from one place.
 ///
-/// Fedra (voice) and Assistant (system) are licensed fonts we don't ship, so the type roles below
-/// substitute the system serif for display and the system sans for UI — same two-voice structure,
-/// no licensing risk.
+/// The type half of the bible lives in `BrandTypography`.
 enum Brand {
     static let charcoal = Color("BrandCharcoal")
     static let line = Color("LineSubtle")
@@ -25,13 +23,6 @@ enum Brand {
         static let md: CGFloat = 16
         static let sm: CGFloat = 8
         static let xl: CGFloat = 32
-    }
-}
-
-extension Font {
-    /// Display voice — the serif stand-in for Fedra.
-    static func brandDisplay(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .serif)
     }
 }
 

@@ -38,8 +38,9 @@ extension VocabularyClient: DependencyKey {
                 } catch let urlError as URLError where urlError.isConnectivityFailure {
                     // Offline is the *only* failure allowed to answer from disk. HTTP and decoding
                     // failures fall through this catch and propagate to the caller.
+                    // `try?` flattens here: a throwing read and an empty cache both mean
+                    // "no usable cache", and both correctly fall through to the bundled copy.
                     if let cached = try? cache.load(),
-                       let cached,
                        let sets = try? decoder.decode([VocabSet].self, from: cached) {
                         return VocabularyLoad(sets: sets, source: .cache)
                     }

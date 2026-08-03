@@ -53,7 +53,7 @@ extension VocabCacheClient: DependencyKey {
         // Application Support rather than Caches: this file is the app's offline guarantee, and
         // the OS may evict Caches at any point, which would silently demote a fresh cache to the
         // older bundled copy. Excluded from backup because the content is re-downloadable.
-        func fileURL() throws -> URL {
+        @Sendable func fileURL() throws -> URL {
             let directory = try FileManager.default.url(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask,

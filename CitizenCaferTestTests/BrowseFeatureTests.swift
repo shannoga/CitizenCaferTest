@@ -69,7 +69,9 @@ final class BrowseFeatureTests: XCTestCase {
 
         shouldFail.setValue(false)
 
-        await store.send(.retryButtonTapped)
+        await store.send(.retryButtonTapped) {
+            $0.loadState = .loading
+        }
         await store.receive(\.vocabularyResponse.success) {
             $0.loadState = .loaded(Fixtures.sets, .remote)
             $0.selectedTier = "Freedom"

@@ -4,6 +4,12 @@ import SwiftUI
 struct StudyView: View {
     let store: StoreOf<StudyFeature>
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The circular control grows with the text so its glyph never outruns its background, and so
+    /// the touch target gets larger for the people who asked for larger type.
+    @ScaledMetric(relativeTo: .body) private var controlDiameter: CGFloat = 48
+
     var body: some View {
         VStack(spacing: Brand.Space.xl) {
             Spacer(minLength: 0)
@@ -12,13 +18,13 @@ struct StudyView: View {
                 FlipCard(isFlipped: store.isShowingEnglish) {
                     cardFace {
                         Text(card.hebrew)
-                            .font(.brandDisplay(48))
+                            .brandType(.cardPrompt)
                             .environment(\.layoutDirection, .rightToLeft)
                     }
                 } back: {
                     cardFace {
                         Text(card.english)
-                            .font(.title2.weight(.medium))
+                            .brandType(.cardAnswer)
                             .foregroundStyle(Brand.textMuted)
                     }
                 }
@@ -29,6 +35,7 @@ struct StudyView: View {
                 .accessibilityAddTraits(.isButton)
             } else {
                 Text("This pack has no words yet.")
+                    .brandType(.body)
                     .foregroundStyle(Brand.textMuted)
             }
 
@@ -53,41 +60,68 @@ struct StudyView: View {
             .hairlineBorder(radius: Brand.Radius.card)
     }
 
+    /// One row while the labels fit; at accessibility sizes Next takes its own full-width line
+    /// rather than pushing the counter under the shuffle button and running off the screen.
     private var controls: some View {
-        HStack {
-            Button {
-                store.send(.shuffleButtonTapped)
-            } label: {
-                Label("Shuffle", systemImage: "shuffle")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 48, height: 48)
-                    .background(Brand.raised, in: Circle())
-                    .hairlineBorder(radius: 24)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: Brand.Space.md) {
+                    HStack {
+                        shuffleButton
+                        Spacer()
+                        progress
+                    }
+                    nextButton.frame(maxWidth: .infinity)
+                }
+            } else {
+                HStack {
+                    shuffleButton
+                    Spacer()
+                    progress
+                    Spacer()
+                    nextButton
+                }
             }
-            .accessibilityLabel("Shuffle the deck")
-
-            Spacer()
-
-            Text(store.progress)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(Brand.textMuted)
-                .accessibilityLabel("Card \(store.progress)")
-
-            Spacer()
-
-            Button {
-                store.send(.nextButtonTapped)
-            } label: {
-                Label("Next", systemImage: "arrow.right")
-                    .font(.headline)
-                    .foregroundStyle(Brand.charcoal)
-                    .padding(.horizontal, Brand.Space.lg)
-                    .frame(height: 48)
-                    .background(Brand.yellow, in: Capsule())
-            }
-            .accessibilityLabel("Next card")
         }
         .tint(Brand.textPrimary)
+    }
+
+    private var shuffleButton: some View {
+        Button {
+            store.send(.shuffleButtonTapped)
+        } label: {
+            Label("Shuffle", systemImage: "shuffle")
+                .labelStyle(.iconOnly)
+                .frame(width: controlDiameter, height: controlDiameter)
+                .background(Brand.raised, in: Circle())
+                .hairlineBorder(radius: controlDiameter / 2)
+        }
+        .accessibilityLabel("Shuffle the deck")
+    }
+
+    private var progress: some View {
+        Text(store.progress)
+            .brandType(.metaDigits)
+            .foregroundStyle(Brand.textMuted)
+            .accessibilityLabel("Card \(store.progress)")
+    }
+
+    private var nextButton: some View {
+        Button {
+            store.send(.nextButtonTapped)
+        } label: {
+            Label("Next", systemImage: "arrow.right")
+                .brandType(.buttonLabel)
+                .foregroundStyle(store.canAdvance ? Brand.charcoal : Brand.textMuted)
+                .padding(.horizontal, Brand.Space.lg)
+                .frame(minHeight: controlDiameter)
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+                .background(store.canAdvance ? Brand.yellow : Brand.line, in: Capsule())
+        }
+        .disabled(!store.canAdvance)
+        .animation(.easeInOut(duration: 0.2), value: store.canAdvance)
+        .accessibilityLabel("Next card")
+        .accessibilityHint(store.canAdvance ? "" : "Flip the card to reveal the English first.")
     }
 }
 

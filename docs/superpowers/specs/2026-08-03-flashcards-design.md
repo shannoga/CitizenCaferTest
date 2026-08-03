@@ -199,8 +199,54 @@ rotation to a cross-fade.
 
 Rules taken from the design bible: charcoal text on yellow (never white), no pure-white page
 background, yellow as emphasis rather than fill, thin borders, generous whitespace, restrained
-motion. Fedra/Assistant are licensed and unavailable, so display type uses the system serif
-and UI type the system sans — noted in the README.
+motion.
+
+### Typography
+
+The bible's dual-type system, implemented as written: **Assistant is the system, Fedra is the
+voice.** Fedra Sans Pro appears only on page and section titles; Assistant carries navigation,
+labels, controls, body copy and metadata — and all Hebrew.
+
+The licensed Fedra Sans Pro kit is Latin/Cyrillic/Greek with **no Hebrew**. That is not a
+workaround: the bible pairs Fedra with Assistant precisely because Assistant is the Hebrew
+companion, so the Hebrew card prompt is Assistant by design. Fedra roles still declare an
+Assistant fallback so off-script text inside a heading stays in the brand.
+
+`BrandTypography.Role` is one case per row of the bible's structural hierarchy, and views apply
+it with `.brandType(_:)` — no view names a font or a size.
+
+| Role          | Bible role     | Face               | Size | Scales from  | Line height |
+| ------------- | -------------- | ------------------ | ---- | ------------ | ----------- |
+| `cardPrompt`  | `display.hero` | Assistant Bold     | 48   | `.largeTitle`| natural     |
+| `cardAnswer`  | —              | Assistant SemiBold | 24   | `.title2`    | natural     |
+| `h1`          | `heading.h1`   | Fedra Sans Bold    | 30   | `.title1`    | natural     |
+| `h2`          | `heading.h2`   | Fedra Sans Bold    | 22   | `.title2`    | natural     |
+| `body`        | `body.default` | Assistant Regular  | 17   | `.body`      | ≥ 1.4       |
+| `bodySmall`   | `body.default` | Assistant Regular  | 15   | `.subheadline`| ≥ 1.4      |
+| `uiLabel`     | `ui.label`     | Assistant Regular  | 17   | `.body`      | natural     |
+| `buttonLabel` | `button.label` | Assistant SemiBold | 17   | `.headline`  | natural     |
+| `metaSmall`   | `meta.small`   | Assistant Regular  | 13   | `.footnote`  | ≥ 1.4       |
+| `metaDigits`  | `meta.small`   | Assistant Regular  | 13   | `.footnote`  | natural     |
+
+**Line height.** Assistant sets ~1.31em on its own, so body roles add the difference as line
+spacing to clear the bible's 1.4 floor. Headings and control labels keep their natural leading —
+the floor is a floor, not a target. No role sets negative tracking.
+
+**Fallback stacks.** Fedra roles carry an explicit Core Text cascade to Assistant, so a missing
+glyph lands on the brand's own Hebrew face before the system font. If a face were dropped from
+the bundle entirely, roles fall back to the system font at their declared weight.
+
+**Registration.** Five static weights live in `Resources/Fonts/` (`LICENSES.md` records that
+Fedra is a Typotheque licence and not redistributable; Assistant ships with its OFL notice).
+They register through `CTFontManagerRegisterFontURLs` from a lazy global, not `UIAppFonts` — the
+target generates its Info.plist, and lazy registration also covers SwiftUI previews and unit
+tests, neither of which runs the app's `init`. `UINavigationBar` gets the faces explicitly
+through `UINavigationBarAppearance`: Fedra for the large title, Assistant for inline chrome.
+
+**Dynamic Type.** Every role resolves through `UIFontMetrics` against the reader's current size
+category, recomputed when it changes, so brand type scales exactly like system type — verified to
+AX5. Two layouts adapt with it: the picker rows stack their value under the title, and the study
+controls give Next its own full-width line, instead of wrapping mid-word or running off-screen.
 
 ---
 
@@ -218,7 +264,13 @@ Reducer, via `TestStore`:
 
 6. selecting a tier resets a level and type that belonged to the previous tier
 
-Six against a required two; these are exactly the scenarios the brief enumerates.
+Typography, in-process:
+
+7. every bundled face registers and resolves under its PostScript name
+8. every face has glyphs for Hebrew with nikud — otherwise the cards would silently fall back
+   to a substitute font
+
+Well past the required two; 1–6 are exactly the scenarios the brief enumerates.
 
 ---
 
@@ -238,6 +290,6 @@ polish and the optional list come last.
 
 ## 7. Intentionally skipped (for the README)
 
-Completion screen, haptics, swipe-to-advance, custom fonts, iPad layout, progress persistence.
+Completion screen, haptics, swipe-to-advance, iPad layout, progress persistence.
 VoiceOver labels and Reduce Motion are included because they are cheap and the card is
 otherwise opaque to assistive technology.
