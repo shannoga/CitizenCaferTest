@@ -33,66 +33,72 @@ struct BrowseView: View {
     // MARK: - Selection
 
     private var picker: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Brand.Space.lg) {
-                header
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Brand.Space.lg) {
+                    header
 
-                VStack(spacing: 0) {
-                    menuRow(
-                        title: "Tier",
-                        value: store.selectedTier,
-                        options: store.tiers,
-                        label: { $0 },
-                        select: { store.send(.tierSelected($0)) }
-                    )
+                    VStack(spacing: 0) {
+                        menuRow(
+                            title: "Tier",
+                            value: store.selectedTier,
+                            options: store.tiers,
+                            label: { $0 },
+                            select: { store.send(.tierSelected($0)) }
+                        )
 
-                    Divider().overlay(Brand.line)
-
-                    menuRow(
-                        title: "Level",
-                        value: store.selectedLevel,
-                        options: store.levels,
-                        label: { $0 },
-                        dotColor: { Brand.levelColor(for: $0) },
-                        select: { store.send(.levelSelected($0)) }
-                    )
-
-                    // Only levels with more than one content pack get a type selector.
-                    if store.requiresTypeSelection {
                         Divider().overlay(Brand.line)
 
                         menuRow(
-                            title: "Pack",
-                            value: store.selectedType.map { "Pack \($0)" },
-                            options: store.types,
-                            label: { "Pack \($0)" },
-                            select: { store.send(.typeSelected($0)) }
+                            title: "Level",
+                            value: store.selectedLevel,
+                            options: store.levels,
+                            label: { $0 },
+                            dotColor: { Brand.levelColor(for: $0) },
+                            select: { store.send(.levelSelected($0)) }
                         )
+
+                        // Only levels with more than one content pack get a type selector.
+                        if store.requiresTypeSelection {
+                            Divider().overlay(Brand.line)
+
+                            menuRow(
+                                title: "Pack",
+                                value: store.selectedType.map { "Pack \($0)" },
+                                options: store.types,
+                                label: { "Pack \($0)" },
+                                select: { store.send(.typeSelected($0)) }
+                            )
+                        }
+                    }
+                    .background(Brand.raised, in: RoundedRectangle(cornerRadius: Brand.Radius.card, style: .continuous))
+                    .hairlineBorder(radius: Brand.Radius.card)
+
+                    if let note = offlineNote {
+                        Label(note, systemImage: "arrow.down.circle")
+                            .brandType(.metaSmall)
+                            .foregroundStyle(Brand.textMuted)
                     }
                 }
-                .background(Brand.raised, in: RoundedRectangle(cornerRadius: Brand.Radius.card, style: .continuous))
-                .hairlineBorder(radius: Brand.Radius.card)
-
-                Button {
-                    store.send(.startStudyingButtonTapped)
-                } label: {
-                    Text("Start studying")
-                        .brandType(.buttonLabel)
-                        .foregroundStyle(Brand.charcoal)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(
-                            store.canStartStudying ? Brand.yellow : Brand.line,
-                            in: RoundedRectangle(cornerRadius: Brand.Radius.control, style: .continuous)
-                        )
-                }
-                .disabled(!store.canStartStudying)
-
-                if let note = offlineNote {
-                    Label(note, systemImage: "arrow.down.circle")
-                        .brandType(.metaSmall)
-                        .foregroundStyle(Brand.textMuted)
-                }
+                .padding(Brand.Space.lg)
             }
+
+            // Pinned outside the ScrollView so its on-screen position stays fixed at the
+            // bottom: an open Menu's dismiss-tap can pass through to whatever sits underneath
+            // it, and this keeps the button from ever landing under a menu's dropdown.
+            Button {
+                store.send(.startStudyingButtonTapped)
+            } label: {
+                Text("Start studying")
+                    .brandType(.buttonLabel)
+                    .foregroundStyle(Brand.charcoal)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(
+                        store.canStartStudying ? Brand.yellow : Brand.line,
+                        in: RoundedRectangle(cornerRadius: Brand.Radius.control, style: .continuous)
+                    )
+            }
+            .disabled(!store.canStartStudying)
             .padding(Brand.Space.lg)
         }
     }
@@ -100,7 +106,7 @@ struct BrowseView: View {
     /// The logo is decorative here: the navigation bar already announces "Citizen Café", so
     /// exposing the mark again would just make VoiceOver repeat the brand name.
     private var header: some View {
-        VStack(alignment: .leading, spacing: Brand.Space.md) {
+        VStack(alignment: .leading, spacing: Brand.Space.lg) {
             Image("Logo")
                 .resizable()
                 .interpolation(.high)
