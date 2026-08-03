@@ -89,6 +89,19 @@ enum BrandTypography {
 
         var usesMonospacedDigits: Bool { self == .metaDigits }
 
+        /// How far a role may shrink below its scaled size rather than be truncated.
+        ///
+        /// Only the card faces get an allowance, and only because they are the one place a single
+        /// unbreakable word carries the whole screen: at accessibility sizes a long Hebrew word has
+        /// nothing to wrap onto, so without this it is simply cut off. Everything else wraps, and
+        /// shrinking it would quietly undo the size the reader asked for.
+        var minimumScaleFactor: CGFloat {
+            switch self {
+            case .cardAnswer, .cardPrompt: 0.5
+            case .body, .bodySmall, .buttonLabel, .h1, .h2, .metaDigits, .metaSmall, .uiLabel: 1
+            }
+        }
+
         /// What this role falls back to when its face lacks a glyph. Fedra gets Assistant ahead of
         /// the system font so off-script text stays inside the brand.
         var cascade: [String] {
@@ -178,6 +191,8 @@ private struct BrandTypeModifier: ViewModifier {
         return content
             .font(font)
             .lineSpacing(BrandTypography.lineSpacing(for: role, resolved: resolved))
+            // Inert at 1, so this only ever applies where the role asked for an allowance.
+            .minimumScaleFactor(role.minimumScaleFactor)
     }
 }
 

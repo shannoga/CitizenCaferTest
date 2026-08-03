@@ -33,6 +33,21 @@ struct StudyFeature {
 
         var progress: String { "\(min(index + 1, cards.count)) / \(cards.count)" }
 
+        /// The face currently showing, tagged with the language it is written in.
+        ///
+        /// The tag is the whole point. An untagged Hebrew string reaches whatever voice VoiceOver
+        /// is set to, and an English voice either spells it out letter by letter or skips it — the
+        /// nikud makes that worse, not better. `languageIdentifier` is what carries through to
+        /// VoiceOver's speech language, so the word is spoken by a Hebrew voice inside an otherwise
+        /// English app.
+        var cardAccessibilityLabel: AttributedString {
+            guard let currentCard else { return AttributedString() }
+
+            var label = AttributedString(isShowingEnglish ? currentCard.english : currentCard.hebrew)
+            label.languageIdentifier = isShowingEnglish ? "en" : "he"
+            return label
+        }
+
         /// You have to look at the answer before moving on — that's the whole point of the drill.
         ///
         /// Gated on *having revealed* rather than on *currently showing English*, so flipping back

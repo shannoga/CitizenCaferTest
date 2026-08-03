@@ -7,6 +7,8 @@ struct StudyView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @AccessibilityFocusState private var isCardFocused: Bool
+
     /// The circular control grows with the text so its glyph never outruns its background, and so
     /// the touch target gets larger for the people who asked for larger type.
     @ScaledMetric(relativeTo: .body) private var controlDiameter: CGFloat = 48
@@ -42,9 +44,19 @@ struct StudyView: View {
                         }
                         .onTapGesture { store.send(.cardTapped) }
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel(store.isShowingEnglish ? card.english : card.hebrew)
+                        // Carries the language the face is written in, so a Hebrew word is spoken
+                        // by a Hebrew voice inside an otherwise English app.
+                        .accessibilityLabel(Text(store.cardAccessibilityLabel))
+                        .accessibilityValue("Card \(store.progress)")
                         .accessibilityHint("Double tap to reveal the \(store.isShowingEnglish ? "Hebrew" : "English").")
                         .accessibilityAddTraits(.isButton)
+                        // VoiceOver owns horizontal swipes, so the drag gesture never reaches these
+                        // readers. This puts the same move on the card the gesture lives on — the
+                        // reducer applies the reveal gate either way.
+                        .accessibilityAction(named: store.isOnLastCard ? "Finish the deck" : "Next card") {
+                            store.send(.nextButtonTapped)
+                        }
+                        .accessibilityFocused($isCardFocused)
                     }
                     // Identity is the whole mechanism: the Next button and the swipe both do nothing
                     // but change the index, so they share one transition for free.
@@ -52,6 +64,10 @@ struct StudyView: View {
                     .transition(cardTransition)
                 }
                 .animation(cardAnimation, value: store.index)
+                // Advancing swaps the card's `id`, which destroys the element VoiceOver was sitting
+                // on and drops focus back to the top of the screen. This hands it to the card that
+                // replaced it, which is where the reader already was.
+                .onChange(of: store.index) { isCardFocused = true }
             } else {
                 Text("This pack has no words yet.")
                     .brandType(.body)
