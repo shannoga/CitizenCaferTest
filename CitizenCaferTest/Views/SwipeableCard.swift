@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Horizontal drag on the study card, layered outside `FlipCard`.
 ///
-/// The gesture means two different things depending on whether the card has been revealed, so it
-/// commits to one of them on its first movement — otherwise a flip landing mid-drag would silently
-/// turn the same continuous drag into a swipe. Before the reveal the card is resisted and can only
-/// flip; after it, a leftward throw advances.
+/// The gesture means one thing: a revealed card thrown to the left advances the deck. An
+/// unrevealed card still follows the finger a little and refuses to leave — the tactile
+/// counterpart to the greyed-out Next button, so the control reads as "not yet" rather than dead.
+/// Flipping is the tap's job alone.
 ///
 /// The offset deliberately lives here rather than in the parent. When the parent swaps the card's
 /// `id`, this instance is retained until its removal transition finishes and keeps its own state,
@@ -17,21 +17,15 @@ struct SwipeableCard<Content: View>: View {
     /// tidy up after itself.
     let advanceRemovesCard: Bool
     let onAdvance: () -> Void
-    let onFlip: () -> Void
     @ViewBuilder var content: Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var mode: DragMode?
     @State private var offset: CGFloat = 0
-
-    private enum DragMode { case advance, flip }
 
     /// Past this much leftward travel — or this much projected travel on a flick — the card leaves.
     private let throwDistance: CGFloat = 88
     private let flickDistance: CGFloat = 200
-    /// A shorter reach for the flip, which is a smaller commitment than losing the card.
-    private let flipDistance: CGFloat = 60
     /// A locked or wrong-way card follows the finger at a quarter speed, and no further than this.
     private let resistance: CGFloat = 0.25
     private let resistanceLimit: CGFloat = 40
@@ -45,56 +39,35 @@ struct SwipeableCard<Content: View>: View {
     private var drag: some Gesture {
         DragGesture()
             .onChanged { value in
-                let mode = self.mode ?? (canAdvance ? .advance : .flip)
-                self.mode = mode
-
-                switch mode {
-                case .advance:
-                    // Left tracks the finger exactly; right is refused, because right doesn't advance.
-                    offset = value.translation.width < 0
-                        ? value.translation.width
-                        : resisted(value.translation.width)
-                case .flip:
-                    offset = resisted(value.translation.width)
-                }
+                // Only a revealed card dragged left tracks the finger exactly. An unrevealed card,
+                // or a rightward drag, is resisted — neither of those advances.
+                offset = canAdvance && value.translation.width < 0
+                    ? value.translation.width
+                    : resisted(value.translation.width)
             }
             .onEnded { value in
-                // Explicitly `self.mode`, because the `guard let` below shadows the name.
-                defer { self.mode = nil }
-                guard let mode else { return }
+                let thrown = canAdvance
+                    && (value.translation.width < -throwDistance
+                        || value.predictedEndTranslation.width < -flickDistance)
 
-                switch mode {
-                case .advance:
-                    let thrown = value.translation.width < -throwDistance
-                        || value.predictedEndTranslation.width < -flickDistance
+                if thrown { onAdvance() }
 
-                    if thrown { onAdvance() }
-
-                    // A thrown card that's about to be removed keeps its offset on purpose: the
-                    // parent's removal transition carries it the rest of the way, and animating
-                    // home would fight that. On the last card nothing is removed, so the same
-                    // throw has to put the card back itself or it would sit stranded off-centre.
-                    if !thrown || !advanceRemovesCard {
-                        returnHome(.spring(response: 0.3, dampingFraction: 0.8))
-                    }
-                case .flip:
-                    if abs(value.translation.width) > flipDistance { onFlip() }
-                    // Snapped home fast, so the slide back doesn't compete with the rotation.
-                    returnHome(.easeOut(duration: 0.15))
-                }
+                // A thrown card that's about to be removed keeps its offset on purpose: the
+                // parent's removal transition carries it the rest of the way, and animating home
+                // would fight that. On the last card nothing is removed, so the same throw has to
+                // put the card back itself or it would sit stranded off-centre.
+                if !thrown || !advanceRemovesCard { returnHome() }
             }
     }
 
     /// Reduce Motion keeps the finger-tracking above — following a touch is direct manipulation,
     /// not unrequested motion — but drops the animated return, whose spring overshoots and bounces
     /// after the finger has already lifted.
-    ///
-    /// Both returns route through here so a third call site can't quietly skip the gate.
-    private func returnHome(_ animation: Animation) {
+    private func returnHome() {
         if reduceMotion {
             offset = 0
         } else {
-            withAnimation(animation) { offset = 0 }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = 0 }
         }
     }
 
@@ -114,14 +87,15 @@ private struct SwipeableCardHarness: View {
             SwipeableCard(canAdvance: canAdvance, advanceRemovesCard: !isLastCard) {
                 advances += 1
                 canAdvance = false
-            } onFlip: {
-                canAdvance = true
             } content: {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(canAdvance ? Color.green.opacity(0.25) : Color.gray.opacity(0.25))
                     .frame(height: 280)
-                    .overlay(Text(canAdvance ? "Throw me left" : "Drag to flip"))
+                    .overlay(Text(canAdvance ? "Throw me left" : "Locked — drag resists"))
             }
+
+            // Stands in for the tap that reveals the card, which this harness has no card to do.
+            Toggle("Revealed (can advance)", isOn: $canAdvance)
 
             // There is no parent here to remove the card on a throw, so with this off a
             // successful throw correctly leaves it lying where it landed.

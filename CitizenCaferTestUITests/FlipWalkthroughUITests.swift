@@ -30,9 +30,9 @@ final class FlipWalkthroughUITests: XCTestCase {
         attach(named: "3-english-face")
     }
 
-    /// The same leftward drag does two different things either side of the reveal: first it flips
-    /// the card, and only then does it advance the deck.
-    func testSwipeFlipsBeforeTheRevealAndAdvancesAfterIt() {
+    /// The swipe obeys the reveal gate: the identical leftward drag does nothing at all until the
+    /// card has been flipped, and only then carries it away. Flipping is the tap's job.
+    func testSwipeOnlyAdvancesAfterTheCardIsRevealed() {
         let app = XCUIApplication()
         app.launch()
 
@@ -48,11 +48,18 @@ final class FlipWalkthroughUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Card 1 / 10"].waitForExistence(timeout: 5), "Progress should read 1 / 10.")
 
-        // A locked card refuses to leave, however far you drag it — it flips instead.
+        // A locked card refuses to leave, however far you drag it — and it does not flip either.
         swipeCardLeft(in: app)
         Thread.sleep(forTimeInterval: 1.0)
-        attach(named: "1-swipe-flipped-not-advanced")
+        attach(named: "1-locked-swipe-refused")
         XCTAssertTrue(app.staticTexts["Card 1 / 10"].exists, "A swipe before the reveal must not advance.")
+        // The negative half is the point: without it this passes even if the swipe did advance and
+        // something else happened to still be showing "Card 1 / 10".
+        XCTAssertFalse(app.staticTexts["Card 2 / 10"].exists, "A swipe before the reveal must not advance.")
+
+        // Only a tap reveals the card.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)).tap()
+        Thread.sleep(forTimeInterval: 1.0)
 
         // The identical gesture on the revealed card now throws it away.
         swipeCardLeft(in: app)

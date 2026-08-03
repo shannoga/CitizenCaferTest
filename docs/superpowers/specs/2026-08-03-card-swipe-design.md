@@ -6,21 +6,22 @@ Builds on: [2026-08-03-flashcards-design.md](2026-08-03-flashcards-design.md)
 ## Goal
 
 Give the study card a horizontal drag gesture, and give card changes a matching slide
-transition. The gesture means two different things depending on whether the card has been
-revealed:
+transition. The gesture means one thing, and the reveal state decides whether it is available:
 
 | Card state             | Horizontal drag                                            |
 | ---------------------- | ---------------------------------------------------------- |
-| Not yet revealed       | Resisted travel; past the threshold it flips the card       |
+| Not yet revealed       | Resisted travel that always springs back; never advances    |
 | Revealed (`canAdvance`)| Left tracks the finger and throws to the next card          |
 
 The `canAdvance` rule from the original design is unchanged: you have to look at the answer
 before moving on. The swipe is a second way to obey that rule, never a way around it.
 
+Flipping is the tap's job alone, and a tap that flips fires a soft impact haptic.
+
 ## Non-goals
 
 Backward navigation (the deck is one-way), scrubbable/interactive flip rotation, drag-linked
-card tilt, haptics. The completion screen already exists and is not this feature's concern
+card tilt, flip-by-drag. The completion screen already exists and is not this feature's concern
 beyond routing a last-card throw into it.
 
 ---
@@ -41,7 +42,6 @@ struct SwipeableCard<Content: View>: View {
     /// False on the last card, where advancing finishes the deck instead of replacing the card.
     let advanceRemovesCard: Bool
     let onAdvance: () -> Void
-    let onFlip: () -> Void
     @ViewBuilder var content: Content
 }
 ```
@@ -57,8 +57,7 @@ cards overlap instead of stacking the `VStack` to double height:
 ZStack {
     SwipeableCard(
         canAdvance: store.canAdvance,
-        onAdvance: { store.send(.cardSwiped) },
-        onFlip: { store.send(.cardTapped) }
+        onAdvance: { store.send(.cardSwiped) }
     ) {
         FlipCard(isFlipped: store.isShowingEnglish) { … } back: { … }
     }
@@ -99,41 +98,41 @@ back from the completion screen. So when `advanceRemovesCard` is false, the thro
 
 ## 3. Gesture rules
 
-Mode is locked on the first `onChanged` event of each gesture and cleared in `onEnded`, so a
-flip that completes mid-drag cannot silently turn the same continuous drag into a swipe:
+There is a single behaviour, and no mode state:
 
 ```swift
-private enum DragMode { case advance, flip }
-@State private var mode: DragMode?
 @State private var offset: CGFloat = 0
 ```
 
-**`.advance` mode** (entered when `canAdvance` is true at gesture start):
-
-- Leftward translation tracks the finger 1:1.
-- Rightward translation is resisted — right does not advance.
-- On release, commit if `translation.width < -88` **or** `predictedEndTranslation.width < -200`
-  (a flick). Otherwise spring home with `.spring(response: 0.3, dampingFraction: 0.8)`.
+- A **revealed card dragged left** tracks the finger 1:1. On release it commits if
+  `translation.width < -88` **or** `predictedEndTranslation.width < -200` (a flick). Otherwise it
+  springs home with `.spring(response: 0.3, dampingFraction: 0.8)`.
 - A commit springs home too when `advanceRemovesCard` is false — see §2. Otherwise the offset is
   left alone for the removal transition.
+- **Everything else** — an unrevealed card in either direction, or a rightward drag on a revealed
+  one — is resisted: `translation * 0.25`, clamped to ±40pt, always springing back. Neither of
+  those advances, and the locked card visibly refusing to leave is the tactile counterpart to the
+  greyed-out Next button. It reads as "not yet" rather than as a dead control.
 
-**`.flip` mode** (entered when `canAdvance` is false):
-
-- Either direction is resisted, and past the threshold it flips.
-- On release, if `abs(translation.width) > 60`, call `onFlip()`. Either way the offset snaps
-  home over 0.15s — fast, so the slide-back does not compete with `FlipCard`'s 0.5s rotation
-  for attention.
-
-**Resistance** is shared by both modes: `translation * 0.25`, clamped to ±40pt. The locked card
-visibly refuses to leave, which is the tactile counterpart to the greyed-out Next button. Same
-gesture, two clearly different responses.
+**No mode lock.** An earlier revision let a drag flip an unrevealed card, which meant `canAdvance`
+could change mid-gesture and the same continuous drag could turn from a flip into a throw; a
+`DragMode` locked on the first `onChanged` guarded against that. With flip-by-drag removed,
+`canAdvance` changes only via a tap or the Next button, neither of which can happen mid-drag — so
+the lock guarded against nothing and went with it.
 
 **Fixed thresholds, not proportional ones.** 88pt rather than 25% of the card width, so the view
 needs no `GeometryReader` or width plumbing. The card is full-bleed minus `Brand.Space.lg` on
 each side, so 88pt is roughly a quarter of it on every phone this ships to.
 
-The existing `.onTapGesture` stays. Tap remains the primary way to flip; a `DragGesture` with the
+The existing `.onTapGesture` stays, and is now the *only* way to flip; a `DragGesture` with the
 default 10pt minimum distance coexists with it.
+
+**The flip haptic.** The tap increments a view-local `@State flipTicks`, and
+`.sensoryFeedback(.impact(flexibility: .soft), trigger: flipTicks)` fires on it. A counter rather
+than `store.isShowingEnglish`, because `advance` and `restart()` both clear that flag — triggering
+on it would buzz on Next and on Shuffle. View-local rather than reducer state, because feedback is
+presentation, and a new `State` field mutated by `.cardTapped` would force an edit to all ten
+exhaustive `TestStore` assertions that send it.
 
 ---
 
@@ -171,7 +170,7 @@ private func advance(_ state: inout State) -> Effect<Action> {
 A leftward throw on the last card therefore finishes the deck exactly as the Finish button does,
 including the `.delegate(.deckFinished)` the parent needs to push the completion screen.
 
-Flip-by-drag needs no new action; it sends the existing `.cardTapped`.
+Flipping needs no new action; the tap sends the existing `.cardTapped`.
 
 ---
 
@@ -207,8 +206,12 @@ a second path to something they can already reach, at the cost of another announ
 **`FlipWalkthroughUITests`** — one addition, kept as a walkthrough with screenshot attachments
 rather than a strict assertion suite, consistent with the existing file:
 
-- Swipe left before flipping → `Card 1 / 10` still reads 1.
+- Swipe left before flipping → `Card 1 / 10` still reads 1, and `Card 2 / 10` does not exist.
+  Both halves matter: the negative assertion is what makes the first one mean something.
 - Tap to flip, swipe left → reads `2 / 10`.
+
+Haptics are not covered: they cannot be felt in the simulator, so the flip haptic is verified by
+hand on a device.
 
 ---
 

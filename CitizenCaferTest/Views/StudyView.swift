@@ -9,6 +9,11 @@ struct StudyView: View {
 
     @AccessibilityFocusState private var isCardFocused: Bool
 
+    /// Drives the flip haptic, and lives here rather than in `State` because it is presentation,
+    /// not domain. Triggering on `isShowingEnglish` instead would be wrong twice over: `advance`
+    /// clears it, so Next would buzz, and `restart()` clears it, so Shuffle would too.
+    @State private var flipTicks = 0
+
     /// The circular control grows with the text so its glyph never outruns its background, and so
     /// the touch target gets larger for the people who asked for larger type.
     @ScaledMetric(relativeTo: .body) private var controlDiameter: CGFloat = 48
@@ -26,8 +31,7 @@ struct StudyView: View {
                         // The last card finishes the deck rather than being replaced, so there's no
                         // removal transition coming and the throw has to put the card back itself.
                         advanceRemovesCard: !store.isOnLastCard,
-                        onAdvance: { store.send(.cardSwiped) },
-                        onFlip: { store.send(.cardTapped) }
+                        onAdvance: { store.send(.cardSwiped) }
                     ) {
                         FlipCard(isFlipped: store.isShowingEnglish) {
                             cardFace {
@@ -42,7 +46,11 @@ struct StudyView: View {
                                     .foregroundStyle(Brand.textMuted)
                             }
                         }
-                        .onTapGesture { store.send(.cardTapped) }
+                        .onTapGesture {
+                            flipTicks += 1
+                            store.send(.cardTapped)
+                        }
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: flipTicks)
                         .accessibilityElement(children: .combine)
                         // Carries the language the face is written in, so a Hebrew word is spoken
                         // by a Hebrew voice inside an otherwise English app.
