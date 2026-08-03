@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import UIKit
 
 struct BrowseView: View {
     let store: StoreOf<BrowseFeature>
@@ -52,7 +53,7 @@ struct BrowseView: View {
                         value: store.selectedLevel,
                         options: store.levels,
                         label: { $0 },
-                        dotColor: Self.levelColor(for:),
+                        dotColor: { Self.levelColor(for: $0) },
                         select: { store.send(.levelSelected($0)) }
                     )
 
@@ -177,7 +178,10 @@ struct BrowseView: View {
     private func rowValue(_ value: String?, dotColor: ((String) -> Color?)? = nil) -> some View {
         HStack(spacing: Brand.Space.sm) {
             if let value, let color = dotColor?(value) {
-                levelDot(color)
+                Circle()
+                    .fill(color)
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
             }
             Text(value ?? "Choose")
                 .foregroundStyle(value == nil ? Brand.textMuted : Brand.textPrimary)
@@ -185,25 +189,29 @@ struct BrowseView: View {
         }
     }
 
-    /// A menu item's label is bridged to a native `UIMenu` entry, which only carries a title and
-    /// an `Image` — arbitrary shapes like `Circle` are dropped, so the dot has to be an image.
+    /// A menu item's label is bridged to a native `UIMenu` entry: its icon is always forced to
+    /// the menu's monochrome tint, so `foregroundStyle` on an SF Symbol is silently ignored. The
+    /// only way to keep the actual color is to bake it into a bitmap and mark it `.original`.
     @ViewBuilder
     private func menuItemLabel(_ text: String, dotColor: ((String) -> Color?)?) -> some View {
         if let color = dotColor?(text) {
             Label {
                 Text(text)
             } icon: {
-                levelDot(color)
+                Image(uiImage: Self.dotImage(for: color))
+                    .renderingMode(.original)
             }
         } else {
             Text(text)
         }
     }
 
-    private func levelDot(_ color: Color) -> some View {
-        Image(systemName: "circle.fill")
-            .foregroundStyle(color)
-            .accessibilityHidden(true)
+    private static func dotImage(for color: Color) -> UIImage {
+        let diameter: CGFloat = 14
+        return UIGraphicsImageRenderer(size: CGSize(width: diameter, height: diameter)).image { _ in
+            UIColor(color).setFill()
+            UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
+        }
     }
 
     private var chevron: some View {
@@ -215,7 +223,7 @@ struct BrowseView: View {
     /// Levels are literally named after colors, so the dot just resolves the name to its asset
     /// catalog swatch — same convention as every other `Brand` color.
     private static func levelColor(for level: String) -> Color? {
-        levelAssetNameByLevel[level].map(Color.init(_:))
+        levelAssetNameByLevel[level].map { Color($0) }
     }
 
     private static let levelAssetNameByLevel: [String: String] = [
@@ -259,17 +267,5 @@ struct BrowseView: View {
                 .padding(.top, Brand.Space.sm)
         }
         .padding(Brand.Space.xl)
-    }
-}
-
-private extension Color {
-    /// Level swatches only, e.g. `0xE5484D` — not a general-purpose initializer for brand colors,
-    /// which stay resolved through the asset catalog.
-    init(hex: UInt32) {
-        self.init(
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255
-        )
     }
 }
