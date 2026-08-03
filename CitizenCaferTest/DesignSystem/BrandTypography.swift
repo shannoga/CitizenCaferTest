@@ -261,13 +261,15 @@ extension BrandTypography {
     static func applyNavigationBarAppearance() {
         guard register() else { return }
 
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(Brand.surface)
-        appearance.shadowColor = UIColor(Brand.line)
-
+        // Type only: the bar's background is left to UIKit. The page already paints
+        // `Brand.surface` behind the bar, so setting it here only restated what was already there —
+        // and an opaque background does so at the cost of the title, which UIKit ends up drawing
+        // underneath it once the bar has been through a scroll transition. A bounce on content too
+        // short to scroll is enough to trigger it. Covered by `NavigationTitleUITests`.
         let primary = UIColor(Brand.textPrimary)
         let category = UIApplication.shared.preferredContentSizeCategory
+
+        let appearance = UINavigationBarAppearance()
         appearance.largeTitleTextAttributes = [
             .font: resolvedFont(for: .h1, at: category), .foregroundColor: primary,
         ]
