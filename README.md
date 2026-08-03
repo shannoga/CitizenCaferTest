@@ -1,4 +1,10 @@
+
+
 # Citizen Café — Hebrew Flashcards
+https://github.com/user-attachments/assets/cd09b38a-c215-4479-88dc-92fae31eca19
+
+
+
 
 A native iOS app for studying Hebrew vocabulary. Pick a tier → level → content pack, then flip
 through cards with a real 3D rotation between the Hebrew prompt and the English answer.
