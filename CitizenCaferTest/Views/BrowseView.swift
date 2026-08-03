@@ -106,6 +106,9 @@ struct BrowseView: View {
                 .scaledToFit()
                 .frame(width: logoSize, height: logoSize)
                 .clipShape(RoundedRectangle(cornerRadius: Brand.Radius.control, style: .continuous))
+                // The mark's lower half is white, which would otherwise dissolve into the
+                // off-white surface — the hairline is what keeps it reading as a lockup.
+                .hairlineBorder(radius: Brand.Radius.control)
                 .accessibilityHidden(true)
 
             Text("Choose what to study")
