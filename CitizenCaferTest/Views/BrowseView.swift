@@ -53,7 +53,7 @@ struct BrowseView: View {
                         value: store.selectedLevel,
                         options: store.levels,
                         label: { $0 },
-                        dotColor: { Self.levelColor(for: $0) },
+                        dotColor: { Brand.levelColor(for: $0) },
                         select: { store.send(.levelSelected($0)) }
                     )
 
@@ -219,27 +219,6 @@ struct BrowseView: View {
             .brandType(.metaSmall)
             .foregroundStyle(Brand.textMuted)
     }
-
-    /// Levels are literally named after colors, so the dot just resolves the name to its asset
-    /// catalog swatch — same convention as every other `Brand` color.
-    private static func levelColor(for level: String) -> Color? {
-        levelAssetNameByLevel[level].map { Color($0) }
-    }
-
-    private static let levelAssetNameByLevel: [String: String] = [
-        "Red": "LevelRed",
-        "Orange": "LevelOrange",
-        "Pink": "LevelPink",
-        "Yellow": "LevelYellow",
-        "Light Blue": "LevelLightBlue",
-        "Blue": "LevelBlue",
-        "Lime": "LevelLime",
-        "Green": "LevelGreen",
-        "Dark Green": "LevelDarkGreen",
-        "Turquoise": "LevelTurquoise",
-        "Indigo": "LevelIndigo",
-        "Purple": "LevelPurple",
-    ]
 
     // MARK: - Error
 

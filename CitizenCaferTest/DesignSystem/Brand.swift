@@ -24,6 +24,27 @@ enum Brand {
         static let sm: CGFloat = 8
         static let xl: CGFloat = 32
     }
+
+    /// Levels are literally named after colors, so the dot just resolves the name to its asset
+    /// catalog swatch.
+    static func levelColor(for level: String) -> Color? {
+        levelAssetNameByLevel[level].map { Color($0) }
+    }
+
+    private static let levelAssetNameByLevel: [String: String] = [
+        "Red": "LevelRed",
+        "Orange": "LevelOrange",
+        "Pink": "LevelPink",
+        "Yellow": "LevelYellow",
+        "Light Blue": "LevelLightBlue",
+        "Blue": "LevelBlue",
+        "Lime": "LevelLime",
+        "Green": "LevelGreen",
+        "Dark Green": "LevelDarkGreen",
+        "Turquoise": "LevelTurquoise",
+        "Indigo": "LevelIndigo",
+        "Purple": "LevelPurple",
+    ]
 }
 
 /// The thin neutral rule that borders nearly every surface in the bible.

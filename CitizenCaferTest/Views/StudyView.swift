@@ -48,6 +48,23 @@ struct StudyView: View {
         .background(Brand.surface)
         .navigationTitle(store.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The bar's title-text styling comes from `UINavigationBarAppearance`, so a custom
+            // principal view has to match it by hand rather than relying on `.navigationTitle`.
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: Brand.Space.sm) {
+                    if let color = Brand.levelColor(for: store.level) {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 10, height: 10)
+                    }
+                    Text(store.title)
+                        .brandType(.buttonLabel)
+                        .foregroundStyle(Brand.textPrimary)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
     }
 
     private func cardFace<Content: View>(@ViewBuilder content: () -> Content) -> some View {

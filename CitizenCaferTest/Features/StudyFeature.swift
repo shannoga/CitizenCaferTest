@@ -9,10 +9,12 @@ struct StudyFeature {
         var hasRevealedCurrentCard = false
         var index = 0
         var isShowingEnglish = false
+        var level: String
         var title: String
 
         init(set: VocabSet) {
             self.cards = set.pairs
+            self.level = set.level
             self.title = set.type.map { "\(set.level) · Pack \($0)" } ?? set.level
         }
 
