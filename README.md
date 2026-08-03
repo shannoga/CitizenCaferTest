@@ -9,7 +9,9 @@ Built in roughly four hours against the Citizen Hub public vocabulary API.
 
 ## Running it
 
-Requires Xcode 26 and an iOS 26 simulator.
+Deployment target is **iOS 17.0**, per the brief. Built with Xcode 26; the only simulator runtime
+installed on the development machine was iOS 26.5, so the app is compiled against 17.0 and verified
+running on 26.5 — see Known gaps.
 
 ```sh
 open CitizenCaferTest.xcodeproj
@@ -288,3 +290,7 @@ handling on the flip.
 - `VocabCacheClient`'s live implementation is not covered by a test that writes to a real disk. The
   strategy around it is fully covered; the `FileManager` calls themselves are not.
 - No snapshot tests. The flip is verified by the UI walkthrough and by eye.
+- The app targets iOS 17.0 and compiles cleanly against it with no availability diagnostics, but
+  the development machine only had an iOS 26.5 simulator runtime installed, so it has not been
+  *executed* on an iOS 17 device or simulator. Nothing in the code uses post-17 API — the compiler
+  would have rejected it against this target — but that's a static guarantee, not a runtime one.
