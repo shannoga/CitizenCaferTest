@@ -20,6 +20,8 @@ struct SwipeableCard<Content: View>: View {
     let onFlip: () -> Void
     @ViewBuilder var content: Content
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var mode: DragMode?
     @State private var offset: CGFloat = 0
 
@@ -73,14 +75,27 @@ struct SwipeableCard<Content: View>: View {
                     // home would fight that. On the last card nothing is removed, so the same
                     // throw has to put the card back itself or it would sit stranded off-centre.
                     if !thrown || !advanceRemovesCard {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = 0 }
+                        returnHome(.spring(response: 0.3, dampingFraction: 0.8))
                     }
                 case .flip:
                     if abs(value.translation.width) > flipDistance { onFlip() }
                     // Snapped home fast, so the slide back doesn't compete with the rotation.
-                    withAnimation(.easeOut(duration: 0.15)) { offset = 0 }
+                    returnHome(.easeOut(duration: 0.15))
                 }
             }
+    }
+
+    /// Reduce Motion keeps the finger-tracking above — following a touch is direct manipulation,
+    /// not unrequested motion — but drops the animated return, whose spring overshoots and bounces
+    /// after the finger has already lifted.
+    ///
+    /// Both returns route through here so a third call site can't quietly skip the gate.
+    private func returnHome(_ animation: Animation) {
+        if reduceMotion {
+            offset = 0
+        } else {
+            withAnimation(animation) { offset = 0 }
+        }
     }
 
     private func resisted(_ translation: CGFloat) -> CGFloat {
@@ -88,35 +103,42 @@ struct SwipeableCard<Content: View>: View {
     }
 }
 
-#Preview {
-    struct Harness: View {
-        @State private var canAdvance = false
-        @State private var isLastCard = false
-        @State private var advances = 0
+/// Hoisted out of `#Preview` so the interactive state has somewhere to live.
+private struct SwipeableCardHarness: View {
+    @State private var canAdvance = false
+    @State private var isLastCard = false
+    @State private var advances = 0
 
-        var body: some View {
-            VStack(spacing: 24) {
-                SwipeableCard(canAdvance: canAdvance, advanceRemovesCard: !isLastCard) {
-                    advances += 1
-                    canAdvance = false
-                } onFlip: {
-                    canAdvance = true
-                } content: {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(canAdvance ? Color.green.opacity(0.25) : Color.gray.opacity(0.25))
-                        .frame(height: 280)
-                        .overlay(Text(canAdvance ? "Throw me left" : "Drag to flip"))
-                }
-
-                // There is no parent here to remove the card on a throw, so with this off a
-                // successful throw correctly leaves it lying where it landed.
-                Toggle("Last card (throw springs home)", isOn: $isLastCard)
-
-                Text("Advanced \(advances) times")
+    var body: some View {
+        VStack(spacing: 24) {
+            SwipeableCard(canAdvance: canAdvance, advanceRemovesCard: !isLastCard) {
+                advances += 1
+                canAdvance = false
+            } onFlip: {
+                canAdvance = true
+            } content: {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(canAdvance ? Color.green.opacity(0.25) : Color.gray.opacity(0.25))
+                    .frame(height: 280)
+                    .overlay(Text(canAdvance ? "Throw me left" : "Drag to flip"))
             }
-            .padding()
-        }
-    }
 
-    return Harness()
+            // There is no parent here to remove the card on a throw, so with this off a
+            // successful throw correctly leaves it lying where it landed.
+            Toggle("Last card (throw springs home)", isOn: $isLastCard)
+
+            Text("Advanced \(advances) times")
+        }
+        .padding()
+    }
 }
+
+#Preview {
+    SwipeableCardHarness()
+}
+
+// There is no Reduce Motion variant of this preview because there can't be:
+// `accessibilityReduceMotion` is a get-only environment value, so `.environment(_:_:)` won't accept
+// it. To check the Reduce Motion path — drag and release short of the threshold, and the card should
+// arrive back at centre with no spring and no overshoot — turn it on in the simulator under
+// Settings › Accessibility › Motion, or in the canvas's accessibility inspector.
