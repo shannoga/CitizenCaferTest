@@ -5,6 +5,7 @@ struct StudyView: View {
     let store: StoreOf<StudyFeature>
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The circular control grows with the text so its glyph never outruns its background, and so
     /// the touch target gets larger for the people who asked for larger type.
@@ -15,24 +16,42 @@ struct StudyView: View {
             Spacer(minLength: 0)
 
             if let card = store.currentCard {
-                FlipCard(isFlipped: store.isShowingEnglish) {
-                    cardFace {
-                        Text(card.hebrew)
-                            .brandType(.cardPrompt)
-                            .environment(\.layoutDirection, .rightToLeft)
+                // A ZStack so the outgoing and incoming cards overlap during the transition instead
+                // of stacking the VStack to twice the height.
+                ZStack {
+                    SwipeableCard(
+                        canAdvance: store.canAdvance,
+                        // The last card finishes the deck rather than being replaced, so there's no
+                        // removal transition coming and the throw has to put the card back itself.
+                        advanceRemovesCard: !store.isOnLastCard,
+                        onAdvance: { store.send(.cardSwiped) },
+                        onFlip: { store.send(.cardTapped) }
+                    ) {
+                        FlipCard(isFlipped: store.isShowingEnglish) {
+                            cardFace {
+                                Text(card.hebrew)
+                                    .brandType(.cardPrompt)
+                                    .environment(\.layoutDirection, .rightToLeft)
+                            }
+                        } back: {
+                            cardFace {
+                                Text(card.english)
+                                    .brandType(.cardAnswer)
+                                    .foregroundStyle(Brand.textMuted)
+                            }
+                        }
+                        .onTapGesture { store.send(.cardTapped) }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(store.isShowingEnglish ? card.english : card.hebrew)
+                        .accessibilityHint("Double tap to reveal the \(store.isShowingEnglish ? "Hebrew" : "English").")
+                        .accessibilityAddTraits(.isButton)
                     }
-                } back: {
-                    cardFace {
-                        Text(card.english)
-                            .brandType(.cardAnswer)
-                            .foregroundStyle(Brand.textMuted)
-                    }
+                    // Identity is the whole mechanism: the Next button and the swipe both do nothing
+                    // but change the index, so they share one transition for free.
+                    .id(store.index)
+                    .transition(cardTransition)
                 }
-                .onTapGesture { store.send(.cardTapped) }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(store.isShowingEnglish ? card.english : card.hebrew)
-                .accessibilityHint("Double tap to reveal the \(store.isShowingEnglish ? "Hebrew" : "English").")
-                .accessibilityAddTraits(.isButton)
+                .animation(cardAnimation, value: store.index)
             } else {
                 Text("This pack has no words yet.")
                     .brandType(.body)
@@ -65,6 +84,18 @@ struct StudyView: View {
                 .accessibilityElement(children: .combine)
             }
         }
+    }
+
+    /// Broken out rather than written inline so the ternary has an explicit type to resolve the
+    /// leading-dot cases against.
+    private var cardTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading))
+    }
+
+    private var cardAnimation: Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .snappy
     }
 
     private func cardFace<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -127,17 +158,22 @@ struct StudyView: View {
         Button {
             store.send(.nextButtonTapped)
         } label: {
-            Label("Next", systemImage: "arrow.right")
-                .brandType(.buttonLabel)
-                .foregroundStyle(store.canAdvance ? Brand.charcoal : Brand.textMuted)
-                .padding(.horizontal, Brand.Space.lg)
-                .frame(minHeight: controlDiameter)
-                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
-                .background(store.canAdvance ? Brand.yellow : Brand.line, in: Capsule())
+            // The last card finishes rather than advances, so the button stops promising a card
+            // that isn't coming.
+            Label(
+                store.isOnLastCard ? "Finish" : "Next",
+                systemImage: store.isOnLastCard ? "checkmark" : "arrow.right"
+            )
+            .brandType(.buttonLabel)
+            .foregroundStyle(store.canAdvance ? Brand.charcoal : Brand.textMuted)
+            .padding(.horizontal, Brand.Space.lg)
+            .frame(minHeight: controlDiameter)
+            .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+            .background(store.canAdvance ? Brand.yellow : Brand.line, in: Capsule())
         }
         .disabled(!store.canAdvance)
         .animation(.easeInOut(duration: 0.2), value: store.canAdvance)
-        .accessibilityLabel("Next card")
+        .accessibilityLabel(store.isOnLastCard ? "Finish the deck" : "Next card")
         .accessibilityHint(store.canAdvance ? "" : "Flip the card to reveal the English first.")
     }
 }
