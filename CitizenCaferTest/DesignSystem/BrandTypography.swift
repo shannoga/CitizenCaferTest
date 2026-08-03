@@ -58,7 +58,8 @@ enum BrandTypography {
 
         var face: String {
             switch self {
-            case .h1, .h2: Display.bold.rawValue
+            case .h1: Display.bold.rawValue
+            case .h2: Display.medium.rawValue
             case .cardPrompt: UI.bold.rawValue
             case .cardAnswer, .buttonLabel: UI.semibold.rawValue
             case .body, .bodySmall, .metaDigits, .metaSmall, .uiLabel: UI.regular.rawValue
@@ -92,7 +93,8 @@ enum BrandTypography {
         /// the system font so off-script text stays inside the brand.
         var cascade: [String] {
             switch self {
-            case .h1, .h2: [UI.bold.rawValue]
+            case .h1: [UI.bold.rawValue]
+            case .h2: [UI.semibold.rawValue]
             case .body, .bodySmall, .buttonLabel, .cardAnswer, .cardPrompt, .metaDigits, .metaSmall, .uiLabel: []
             }
         }
@@ -112,7 +114,8 @@ enum BrandTypography {
         /// The weight to fall back on if the bundled face is ever missing from the app.
         fileprivate var systemWeight: UIFont.Weight {
             switch self {
-            case .cardPrompt, .h1, .h2: .bold
+            case .cardPrompt, .h1: .bold
+            case .h2: .medium
             case .buttonLabel, .cardAnswer: .semibold
             case .body, .bodySmall, .metaDigits, .metaSmall, .uiLabel: .regular
             }
